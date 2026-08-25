@@ -1,6 +1,6 @@
 ---
 name: speko-phone-call
-description: Place a real outbound phone call through Speko and read back what was said. Use when the user wants someone actually called on the telephone — booking, confirming, chasing, asking a business a question — or wants to review a call that already happened. Needs SPEKO_API_KEY.
+description: Place a real outbound phone call through Speko and read back what was said. Use when the user wants someone actually called on the telephone — booking, confirming, chasing, asking a business a question — or wants to review a call that already happened. Not for sending SMS, email, or chat messages, and not for building a voice app (use speko-voice-app for that). Needs SPEKO_API_KEY.
 ---
 
 # Placing a phone call with Speko
@@ -41,7 +41,7 @@ one up and dial it without showing it first.
 ## Making the call
 
 ```bash
-curl -sS -X POST https://api.speko.dev/v1/sessions/phone \
+curl -sS --fail-with-body -X POST https://api.speko.dev/v1/sessions/phone \
   -H "Authorization: Bearer $SPEKO_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
@@ -68,31 +68,34 @@ If the account owns more than one number, `GET /v1/phone-numbers` (kebab-case �
 
 ### Proving a request body without ringing anyone
 
-A deliberately bogus `agentId` validates everything except the dial:
+A deliberately bogus `agentId` exercises auth and schema validation without dialing:
 
 ```bash
 curl -sS -X POST https://api.speko.dev/v1/sessions/phone \
   -H "Authorization: Bearer $SPEKO_API_KEY" -H "Content-Type: application/json" \
   -d '{"to": "+14155550142", "agentId": "00000000-0000-0000-0000-000000000000"}'
-# → 404 {"error":"Agent not found","code":"AGENT_NOT_FOUND"}  — body and auth are right, nobody was called
+# → 404 {"error":"Agent not found","code":"AGENT_NOT_FOUND"}  — auth and the fields you sent passed, nobody was called
 ```
 
-Malformed bodies return
+This only checks the fields present in the probe body; it does not validate a `systemPrompt` or
+prove the number is reachable. Malformed bodies return
 `{"error":"Invalid request","code":"VALIDATION_ERROR","issues":[{"path":…,"message":…}]}` —
 read `issues`, fix the named field.
 
 ## Watching and reading back
 
-Poll `GET /v1/sessions/{sessionId}` until the call has ended, then:
+Poll `GET /v1/sessions/{sessionId}` every 5 seconds until the session has ended, for at most 10
+minutes. If it has not ended by then, stop polling and tell the user — do not redial. Then:
 
 ```bash
-curl -sS https://api.speko.dev/v1/calls/{sessionId} \
+SESSION_ID=…  # from the dial response
+curl -sS --fail-with-body https://api.speko.dev/v1/calls/"$SESSION_ID" \
   -H "Authorization: Bearer $SPEKO_API_KEY"
 # status, duration_seconds, transcript, recording_status, recording_resource_uri
 
-curl -sS https://api.speko.dev/v1/calls/{sessionId}/report \
+curl -sS --fail-with-body https://api.speko.dev/v1/calls/"$SESSION_ID"/report \
   -H "Authorization: Bearer $SPEKO_API_KEY"
-# summary, outcome, transcript.entries[{text, source: "agent"|"user", startedAt}]
+# summary, outcome, structured_data, transcript.entries[{text, source: "agent"|"user", startedAt}]
 ```
 
 Summarise the outcome first — did the thing the user wanted happen? — then offer the transcript.
@@ -104,27 +107,30 @@ Do not paraphrase a commitment the other party did not make; quote them.
 playable container, so wrap it:
 
 ```bash
-echo 'Hello from Speko' | jq -Rs '{text: ., intent: {language: "en"}, sampleRate: 24000}' \
-  | curl -sS -X POST https://api.speko.dev/v1/synthesize \
+echo 'Hello from Speko' | jq -Rs '{text: rtrimstr("\n"), intent: {language: "en"}, sampleRate: 24000}' \
+  | curl -sS --fail-with-body -X POST https://api.speko.dev/v1/synthesize \
       -H "Authorization: Bearer $SPEKO_API_KEY" -H "Content-Type: application/json" --data-binary @- \
   | ffmpeg -hide_banner -loglevel error -f s16le -ar 24000 -ac 1 -i pipe:0 -y out.wav
 ```
 
 **Speech to text** — `/v1/transcribe` takes raw audio bytes with the routing intent in an
-`x-speko-intent` header and answers with server-sent events, not JSON; the transcript is the
-`text` field of the final `data:` line. Non-WAV input silently returns an empty transcript, so
-normalise first:
+`x-speko-intent` header and answers with server-sent events (`meta`, interim `transcript` frames,
+then `done`), not JSON; the transcript is the `text` field of the final `data:` line. Feed it a
+real mono 24 kHz WAV **file** — other containers, and WAVs streamed through a pipe with unfixed
+RIFF sizes, can come back `200` with an empty transcript rather than an error:
 
 ```bash
-ffmpeg -hide_banner -loglevel error -i input.ogg -ac 1 -ar 24000 -f wav pipe:1 \
-  | curl -sS -X POST https://api.speko.dev/v1/transcribe \
-      -H "Authorization: Bearer $SPEKO_API_KEY" -H "Content-Type: audio/wav" \
-      -H 'x-speko-intent: {"language": "en"}' --data-binary @- \
-  | grep '^data:' | tail -n1 | sed 's/^data: //' | jq -r .text
+tmp=$(mktemp).wav
+ffmpeg -hide_banner -loglevel error -i input.ogg -ac 1 -ar 24000 -y "$tmp"
+curl -sS --fail-with-body -X POST https://api.speko.dev/v1/transcribe \
+    -H "Authorization: Bearer $SPEKO_API_KEY" -H "Content-Type: audio/wav" \
+    -H 'x-speko-intent: {"language": "en"}' --data-binary @"$tmp" \
+  | grep '^data:' | tail -n1 | sed 's/^data: *//' | jq -r .text
+rm -f "$tmp"
 ```
 
-Change `language` inside `intent` to route other languages. Speko picks the voice and model per
-request from its live benchmarks; you never choose a provider.
+Change `language` inside `intent` to route other languages. You do not select a provider —
+Speko routes the request.
 
 ## What not to do here
 

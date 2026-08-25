@@ -22,24 +22,26 @@ npx skills add SpekoAI/agent-skills -a claude-code -a cursor -a codex
 npx skills add SpekoAI/agent-skills -g -a universal   # global install to ~/.agents/skills
 ```
 
-Works with any agent that reads the Agent Skills format — Claude Code, Cursor, Codex, Copilot,
-Gemini CLI, Cline, Zed, Warp, Amp, Replit, OpenClaw, and others.
+Works with any agent that reads the Agent Skills format.
 
 ### Shelley / exe.dev
 
 [Shelley](https://exe.dev/docs/shelley/intro.md) discovers skills natively from
-`~/.config/agents/skills`, `~/.config/shelley`, and project `.skills/` directories — which the
-`skills` CLI does not currently target, so install by copying:
+`~/.config/agents/skills`, `~/.config/shelley`, and project `.skills/` directories, so install by
+copying:
 
 ```bash
 # global, on an exe.dev VM (or anywhere Shelley runs):
-git clone --depth 1 https://github.com/SpekoAI/agent-skills /tmp/speko-skills \
+rm -rf /tmp/speko-skills \
+  && git clone --depth 1 https://github.com/SpekoAI/agent-skills /tmp/speko-skills \
   && mkdir -p ~/.config/agents/skills \
   && cp -r /tmp/speko-skills/skills/* ~/.config/agents/skills/
 
 # or per-project: vendor a skill into your repo and every fresh VM gets it,
 # including repos launched via https://exe.dev/new?repo=<your-repo>
-mkdir -p .skills && cp -r /tmp/speko-skills/skills/speko-phone-call .skills/
+rm -rf /tmp/speko-skills \
+  && git clone --depth 1 https://github.com/SpekoAI/agent-skills /tmp/speko-skills \
+  && mkdir -p .skills && cp -r /tmp/speko-skills/skills/speko-phone-call .skills/
 ```
 
 ## Keys
