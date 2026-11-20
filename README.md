@@ -1,7 +1,7 @@
 # Speko Agent Skills
 
 [Agent Skills](https://agentskills.io) that teach coding agents to build with and act through
-[Speko](https://speko.ai) — hosted voice agents that place and answer real phone calls, with
+[Speko](https://speko.com) — hosted voice agents that place and answer real phone calls, with
 speech-to-text, LLM routing, and text-to-speech behind one API.
 
 | Skill | What it does |
